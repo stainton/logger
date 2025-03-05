@@ -4,124 +4,87 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
+	"strconv"
 	"sync"
-	"time"
-
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
-type zapWrapper struct {
-	index     []zapcore.Field
-	zapLogger *zap.Logger
+var globalLogger *BaseLogger
+var once = &sync.Once{}
+var stopCh chan struct{}
+
+type BaseLogger struct {
+	logChan chan<- string
 }
 
-func (l *zapWrapper) Debug(msg string) {
-	l.zapLogger.Debug(msg, l.index...)
+type Options struct {
+	// Output directory for log files.
+	Output string
+	// Maximum number of log messages to keep in memory before writing to a file.
+	MaxMessage int
+	// Maximum size of a log file in bytes before it is compressed and a new file is opened.
+	Threshold int
+
+	// Interval in seconds for compressing log files.
+	CompressInterval int
 }
 
-func (l *zapWrapper) Debugf(template string, args ...interface{}) {
-	msg := fmt.Sprintf(template, args...)
-	l.zapLogger.Debug(msg, l.index...)
-}
-
-func (l *zapWrapper) Info(msg string) {
-	l.zapLogger.Info(msg, l.index...)
-}
-
-func (l *zapWrapper) Infof(template string, args ...interface{}) {
-	msg := fmt.Sprintf(template, args...)
-	l.zapLogger.Info(msg, l.index...)
-}
-
-func (l *zapWrapper) Warn(msg string) {
-	l.zapLogger.Warn(msg, l.index...)
-}
-
-func (l *zapWrapper) Warnf(template string, args ...interface{}) {
-	msg := fmt.Sprintf(template, args...)
-	l.zapLogger.Warn(msg, l.index...)
-}
-
-func (l *zapWrapper) Error(msg string) {
-	l.zapLogger.Error(msg, l.index...)
-}
-
-func (l *zapWrapper) Errorf(template string, args ...interface{}) {
-	msg := fmt.Sprintf(template, args...)
-	l.zapLogger.Error(msg, l.index...)
-}
-
-func (l *zapWrapper) Fatal(msg string) {
-	l.zapLogger.Fatal(msg, l.index...)
-}
-
-func (l *zapWrapper) Fatalf(template string, args ...interface{}) {
-	msg := fmt.Sprintf(template, args...)
-	l.zapLogger.Fatal(msg, l.index...)
-}
-
-func (l *zapWrapper) Panic(msg string) {
-	l.zapLogger.Panic(msg, l.index...)
-}
-
-func (l *zapWrapper) Panicf(template string, args ...interface{}) {
-	msg := fmt.Sprintf(template, args...)
-	l.zapLogger.Panic(msg, l.index...)
-}
-
-func (l *zapWrapper) Sync() {
-	l.zapLogger.Sync()
-}
-
-// NewLoggerWithWG creates a new logger with periodic log flushing.
-//
-// It initializes a zap logger wrapped in a zapWrapper struct, which implements the Logger interface.
-// The function also starts a goroutine that periodically flushes logs and handles graceful shutdown.
-//
-// Parameters:
-//   - ctx: A context.Context for cancellation and shutdown signaling.
-//   - wg: A sync.WaitGroup for coordinating goroutine completion.
-//   - servicename: A string identifying the service using this logger.
-//   - connectionString: A string specifying the connection details for log output.
-//   - filePath: A string specifying the file path for log output.
-//
-// Returns:
-//   - Logger: An interface that provides logging methods.
-func NewLoggerWithWG(ctx context.Context, wg *sync.WaitGroup, servicename, connectionString, filePath string) Logger {
-	hostName, err := os.Hostname()
-	if err != nil {
-		hostName = "unknown host"
+func initialOptions() *Options {
+	dir := os.Getenv("LOG_OUTPUT")
+	if dir == "" {
+		dir = "./logs"
 	}
-	hostName = strings.ToLower(hostName)
-	core := zapcore.NewCore(
-		zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
-		zapcore.AddSync(Output(connectionString, filePath)),
-		zap.InfoLevel,
-	)
-
-	l := &zapWrapper{
-		index: []zapcore.Field{
-			zap.String("servicename", servicename),
-			zap.String("hostname", hostName),
-		},
-		zapLogger: zap.New(core),
+	max_message, err := strconv.Atoi(os.Getenv("LOG_MAX_MESS"))
+	if err != nil || max_message <= 0 {
+		fmt.Println("Invalid LOG_MAX_MESS environment variable, using default value 1000. Please set it correctly. ^^")
+		max_message = 1000
 	}
-	wg.Add(1)
-	go func() {
-		ticker := time.NewTicker(5 * time.Second)
-		for {
-			select {
-			case <-ctx.Done():
-				l.Sync()
-				ticker.Stop()
-				wg.Done()
-				return
-			case <-ticker.C:
-				l.Sync()
-			}
+	threshold, err := strconv.Atoi(os.Getenv("LOG_THRESHOLD_BYTE"))
+	if err != nil || threshold <= 0 {
+		fmt.Println("Invalid LOG_THRESHOLD_BYTE environment variable, using default value 10MiB. Please set it correctly. ^^")
+		threshold = Threshold
+	}
+	interval, err := strconv.Atoi(os.Getenv("LOG_COMPRESS_INTERVAL"))
+	if err != nil || interval <= 0 {
+		fmt.Println("Invalid LOG_COMPRESS_INTERVAL environment variable, using default value 3600 seconds. Please set it correctly. ^^")
+		interval = 60 * 60
+	}
+	return &Options{
+		Output:           dir,
+		MaxMessage:       max_message,
+		Threshold:        threshold,
+		CompressInterval: interval,
+	}
+}
+
+func NewLogger(ctx context.Context, opts *Options) (Logger, <-chan struct{}) {
+	once.Do(func() {
+		if opts == nil {
+			opts = initialOptions()
 		}
-	}()
-	return l
+		dir := opts.Output
+		messages := make(chan string, opts.MaxMessage)
+		compressible := make(chan string, 10)
+		errOccur := make(chan error)
+		compresserExited := make(chan error)
+		stopCh = make(chan struct{})
+
+		// 创建一个goroutine用于压缩文件
+		go Compresser(ctx, dir, compressible, opts.CompressInterval, compresserExited)
+		// 创建一个goroutine用于写文件
+		go Writer(ctx, dir, messages, compressible, errOccur, opts.Threshold)
+		go func() {
+			// 等待writer和compresser退出
+			wrErr := <-errOccur
+			close(compressible)
+			fmt.Println("writer exit with error:", wrErr)
+			cpErr := <-compresserExited
+			fmt.Println("compresser exit with error:", cpErr)
+			close(stopCh)
+		}()
+
+		globalLogger = &BaseLogger{
+			logChan: messages,
+		}
+	})
+	return globalLogger, stopCh
 }

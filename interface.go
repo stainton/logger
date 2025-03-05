@@ -2,16 +2,13 @@ package logger
 
 type Logger interface {
 	Debug(msg string)
-	Debugf(template string, args ...interface{})
+	Debugf(template string, args ...any)
 	Info(msg string)
-	Infof(template string, args ...interface{})
+	Infof(template string, args ...any)
 	Warn(msg string)
-	Warnf(template string, args ...interface{})
+	Warnf(template string, args ...any)
 	Error(msg string)
-	Errorf(template string, args ...interface{})
+	Errorf(template string, args ...any)
 	Fatal(msg string)
-	Fatalf(template string, args ...interface{})
-	Panic(msg string)
-	Panicf(template string, args ...interface{})
-	Sync()
+	Fatalf(template string, args ...any)
 }
