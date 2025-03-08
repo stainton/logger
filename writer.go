@@ -9,12 +9,6 @@ import (
 	"time"
 )
 
-const (
-	KiB       = 1 << 10
-	MiB       = KiB * 1024
-	Threshold = 10 * MiB
-)
-
 func createNewLogFile(dir string) (*os.File, error) {
 	prefix := strings.Replace(time.Now().Format("20060102150405.999"), ".", "", -1)
 	filename := path.Join(dir, fmt.Sprintf("%s.log", prefix))
