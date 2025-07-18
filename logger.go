@@ -6,6 +6,8 @@ import (
 	"os"
 	"strconv"
 	"sync"
+
+	"github.com/spf13/cobra"
 )
 
 const (
@@ -115,4 +117,17 @@ func NewLogger(ctx context.Context, opts *Options) (Logger, <-chan struct{}) {
 		}
 	})
 	return globalLogger, stopCh
+}
+
+func NewLogOptions(serviceName string) *Options {
+	return &Options{
+		ServiceName: serviceName,
+	}
+}
+
+func (o *Options) FlagSet(cmd *cobra.Command) {
+	cmd.Flags().IntVar(&o.CompressInterval, "log-compress-interval", 3600, "日志文件压缩间隔")
+	cmd.Flags().IntVar(&o.Threshold, "log-compress-size", DEFAULT_THD, "日志文件压缩阈值")
+	cmd.Flags().IntVar(&o.MaxMessage, "log-max_message", 1000, "允许存在内存中的最多日志条数")
+	cmd.Flags().StringVar(&o.Output, "log-output", "./log", "日志输出目录")
 }
