@@ -65,9 +65,11 @@ func Writer(ctx context.Context, dir string, messages <-chan string, compressibl
 				}
 			}
 		case <-ctx.Done():
+			fmt.Println("DEBUG ctx被cancel了")
 			err := fd.Sync()
 			fd.Close()
 			stop <- err
+			fmt.Println("DEBUG 写入stopch")
 			return
 		}
 	}

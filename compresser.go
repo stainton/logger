@@ -25,6 +25,7 @@ func Compresser(ctx context.Context, dir string, compressible <-chan string, int
 	fmt.Printf("[%s]compresser started... ^^\n", time.Now().String())
 	nowTime := time.Now()
 	fileToBeCompressed := list.New()
+	fmt.Println("DEBUG for循环之前")
 	for {
 		select {
 		case file, ok := <-compressible:
@@ -56,6 +57,7 @@ func Compresser(ctx context.Context, dir string, compressible <-chan string, int
 			stop <- nil
 			return
 		default:
+			fmt.Println("DEBUG default分支")
 			time.Sleep(time.Second * time.Duration(interval))
 		}
 	}
