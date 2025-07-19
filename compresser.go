@@ -28,9 +28,12 @@ func Compresser(ctx context.Context, dir string, compressible <-chan string, int
 	for {
 		select {
 		case file, ok := <-compressible:
+			fmt.Println("DEBUG 有文件要压缩")
 			if (fileToBeCompressed.Len() > 10) || (time.Now().Hour() != nowTime.Hour()) || !ok {
+				fmt.Println("DEBUG 准备压缩1")
 				nowTime = time.Now()
 				compress(dir, &nowTime, fileToBeCompressed)
+				fmt.Println("DEBUG 压缩完毕1")
 			}
 			if !ok {
 				fmt.Printf("[%s]compresser stopped... ^^\n", time.Now().String())
@@ -40,11 +43,15 @@ func Compresser(ctx context.Context, dir string, compressible <-chan string, int
 			// TODO: 有可能超过10个，移到队末？
 			fileToBeCompressed.PushBack(file)
 		case <-ctx.Done():
+			fmt.Println("DEBUG 准备要退出")
 			for file := range compressible {
 				fileToBeCompressed.PushBack(file)
 			}
+			fmt.Println("DEBUG 已经清空带压缩队列")
 			nowTime = time.Now()
+			fmt.Println("DEBUG 准备压缩")
 			compress(dir, &nowTime, fileToBeCompressed)
+			fmt.Println("DEBUG 压缩完成")
 			fmt.Printf("[%s]compresser stopped... ^^\n", time.Now().String())
 			stop <- nil
 			return
