@@ -21,20 +21,27 @@ import (
 //   - compressible: A receive-only channel of strings, each string representing a filename to be compressed.
 //
 // The function does not return any value. It runs indefinitely until the context is cancelled.
-func Compresser(ctx context.Context, dir string, compressible <-chan string, interval int, stop chan<- error) {
+func Compresser(ctx context.Context, dir string, compressible <-chan string, interval int, stop chan<- struct{}) {
 	fmt.Printf("[%s]compresser started... ^^\n", time.Now().String())
 	nowTime := time.Now()
 	fileToBeCompressed := list.New()
+	tmr := time.NewTimer(time.Duration(interval))
+	defer tmr.Stop()
+	defer close(stop)
 	for {
 		select {
+		case <-tmr.C:
+			if fileToBeCompressed.Len() > 0 {
+				nowTime = time.Now()
+				compress(dir, &nowTime, fileToBeCompressed)
+			}
 		case file, ok := <-compressible:
-			if (fileToBeCompressed.Len() > 10) || (time.Now().Hour() != nowTime.Hour()) || !ok {
+			if (fileToBeCompressed.Len() > 10) || !ok {
 				nowTime = time.Now()
 				compress(dir, &nowTime, fileToBeCompressed)
 			}
 			if !ok {
 				fmt.Printf("[%s]compresser stopped... ^^\n", time.Now().String())
-				stop <- nil
 				return
 			}
 			// TODO: 有可能超过10个，移到队末？
@@ -46,10 +53,7 @@ func Compresser(ctx context.Context, dir string, compressible <-chan string, int
 			nowTime = time.Now()
 			compress(dir, &nowTime, fileToBeCompressed)
 			fmt.Printf("[%s]compresser stopped... ^^\n", time.Now().String())
-			stop <- nil
 			return
-		default:
-			time.Sleep(time.Second * time.Duration(interval))
 		}
 	}
 }

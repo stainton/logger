@@ -87,7 +87,7 @@ func NewLogger(ctx context.Context, opts *Options) (Logger, <-chan struct{}) {
 		messages := make(chan string, opts.MaxMessage)
 		compressible := make(chan string, 10)
 		errOccur := make(chan error)
-		compresserExited := make(chan error)
+		compresserExited := make(chan struct{})
 		stopCh = make(chan struct{})
 
 		// 创建一个goroutine用于压缩文件
@@ -99,8 +99,8 @@ func NewLogger(ctx context.Context, opts *Options) (Logger, <-chan struct{}) {
 			wrErr := <-errOccur
 			close(compressible)
 			fmt.Println("writer exit with error:", wrErr)
-			cpErr := <-compresserExited
-			fmt.Println("compresser exit with error:", cpErr)
+			<-compresserExited
+			fmt.Println("compresser exit")
 			close(stopCh)
 		}()
 		if opts.ServiceName == "" {
