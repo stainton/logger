@@ -25,6 +25,7 @@ jobs:
         run: |
           BRANCH="${{ github.event.pull_request.base.ref }}"
           VERSION="${BRANCH#release/}"
+          VERSION="${VERSION#V}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Check if tag exists
