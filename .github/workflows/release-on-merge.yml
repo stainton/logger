@@ -1,0 +1,49 @@
+name: Release On Merge
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  tag-release:
+    if: |
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.base.ref, 'release/')
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write  # 允许打 tag / 创建 release
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 必须拉所有 tag
+
+      - name: Extract version from branch
+        id: version
+        run: |
+          BRANCH="${{ github.event.pull_request.base.ref }}"
+          VERSION="${BRANCH#release/}"
+          VERSION="${VERSION#V}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check if tag exists
+        run: |
+          if git rev-parse "${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "Tag already exists"
+            exit 1
+          fi
+
+      - name: Create git tag
+        run: |
+          git tag "${{ steps.version.outputs.version }}"
+          git push origin "${{ steps.version.outputs.version }}"
+
+      # 可选：创建 GitHub Release（推荐）
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: Release ${{ steps.version.outputs.version }}
+          generate_release_notes: true
